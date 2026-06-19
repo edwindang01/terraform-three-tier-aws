@@ -1,6 +1,6 @@
 # Three-Tier AWS Architecture with Terraform
 
-*a production ready with ensure high availability, durability and security three tier architecture that contain ALB in public subnet, app tier lives in private subnet and database tier lives in downstream that only accept app tier request.*
+*A production-style three-tier AWS architecture built with Terraform. An internet-facing ALB in public subnets distributes traffic to an auto-scaling app tier in private subnets, backed by a Multi-AZ PostgreSQL database in isolated subnets — organized into reusable networking, compute, and database modules.*
 
 ---
 
@@ -220,4 +220,3 @@ This architecture applies defense-in-depth and least-privilege across the networ
 - *\[NAT-per-AZ for HA, VPC endpoints for SSM, remote module registry, etc.\]*
 
 ---
-
