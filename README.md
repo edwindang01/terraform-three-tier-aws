@@ -211,7 +211,7 @@ This architecture applies defense-in-depth and least-privilege across the networ
 *module hides genuine complexity and exposes a clean output→input contract,*  
 *rather than over-modularizing into a module per resource.*
 
----
+--- 
 
 ## Future Improvements
 
