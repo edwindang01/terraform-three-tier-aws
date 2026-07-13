@@ -112,7 +112,7 @@ resource "aws_launch_template" "app" {
     #!/bin/bash
     dnf install -y httpd
     systemctl enable --now httpd
-    echo "Hello from $$(hostname -f)" > /var/www/html/index.html
+    echo "Hello from $(hostname -f)" > /var/www/html/index.html
   EOF
   )
 
