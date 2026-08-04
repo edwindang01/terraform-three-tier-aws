@@ -24,8 +24,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-        role-to-assume: arn:aws:iam::711427856227:role/github-three-tier-architecture
-        aws-region: ap-southeast-1
+          role-to-assume: arn:aws:iam::711427856227:role/github-three-tier-architecture
+          aws-region: ap-southeast-1
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
