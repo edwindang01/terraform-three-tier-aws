@@ -6,7 +6,14 @@
 
 ## Architecture Overview
 
-*this project is a three tier architecture that contains 1 VPC, 2 public subnets which accept public traffic into ALB, ALB split the traffic ingest into auto-scalling group. 4 private subnet include 2 private subnet that app tier with 1 auto-scalling group lives in and 2 private subnet postgreSQL database with multi-az enable lives in.*
+Traffic enters through an internet-facing Application Load Balancer in two
+public subnets, which distributes it to an Auto Scaling Group of EC2 instances
+in two private app subnets. Those instances reach a Multi-AZ PostgreSQL RDS
+instance in two isolated database subnets. Outbound traffic from the private
+tiers exits through a NAT Gateway; the database tier has no internet route at all.
+
+Everything spans two Availability Zones and is organised into three Terraform
+modules — networking, compute, and database.
 
 ### Diagram
 
