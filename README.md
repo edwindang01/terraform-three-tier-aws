@@ -183,6 +183,15 @@ itself — `CreateRole` + `AttachRolePolicy` + `PassRole` together form a
 privilege-escalation path, so those are constrained by resource name prefix
 and `iam:PassedToService = ec2.amazonaws.com`.
 
+Verified in CloudTrail — same run, same role, same OIDC provider and audience.
+Only the subject claim differs:
+
+![Plan job — subject is the branch ref](docs/oidc-cloudtrail-plan.png)
+
+![Apply job — subject is the production environment](docs/oidc-cloudtrail-apply.png)
+
+![Event sequence: plan, plan, then apply after approval](docs/oidc-cloudtrail-events.png)
+
 ---
 
 ## Security Considerations
@@ -306,11 +315,3 @@ differs.
 
 ---
 
-Verified in CloudTrail — same run, same role, same OIDC provider and audience.
-Only the subject claim differs:
-
-![Plan job — subject is the branch ref](docs/oidc-cloudtrail-plan.png)
-
-![Apply job — subject is the production environment](docs/oidc-cloudtrail-apply.png)
-
-![Event sequence: plan, plan, then apply after approval](docs/oidc-cloudtrail-events.png)
