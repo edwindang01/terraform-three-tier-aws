@@ -29,23 +29,17 @@
 
 ## Module Structure
 
+```
 terraform-aws/
-
-├── main.tf              \# root: calls \+ wires the three modules
-
-├── variables.tf         \# root inputs (defaults live here)
-
-├── outputs.tf           \# surfaces alb\_dns\_name, db\_endpoint, vpc\_id
-
-├── terraform.tf         \# backend (S3) \+ provider
-
+├── main.tf          # root: calls + wires the three modules
+├── variables.tf     # root inputs (defaults live here)
+├── outputs.tf       # surfaces alb_dns_name, db_endpoint, vpc_id
+├── terraform.tf     # backend (S3) + provider
 └── modules/
-
-    ├── networking/      \# VPC, subnets, route tables, IGW, NAT
-
-    ├── compute/         \# ALB, ASG, launch template, SGs, SSM
-
-    └── database/        \# RDS, DB subnet group, DB SG
+    ├── networking/  # VPC, subnets, route tables, IGW, NAT
+    ├── compute/     # ALB, ASG, launch template, SGs, SSM
+    └── database/    # RDS, DB subnet group, DB SG
+```
 
 ### `networking`
 
@@ -53,7 +47,7 @@ terraform-aws/
 
 *Description: the 6 subnets are broken into 3 parts, 2 public subnets, 2 private subnets for app and 2 private subnets for database, app private subnets consume traffic from public subnets that ALB lives in, A database only processes requests from app private subnets. The networking module outputs 3 subnets id lists and 1 vpc id. Consume environment and vpc CIDR range from root main.tf . root argument data A heavy output and low input module.*
 
-`compute`  
+### `compute`  
 
 *contain 1 ami lookup, 2 security groups, 1 ssm manager iam role, 1 launch template, 1 auto scaling group, 1 ALB and ALB listener.*
 
@@ -61,48 +55,48 @@ terraform-aws/
 
 ### `database`
 
-contain 1 PostgreSQL database lives in private subnet group with Multi-AZ enable, 1 security group, 1 database subnet group
+*contain 1 PostgreSQL database lives in private subnet group with Multi-AZ enable, 1 security group, 1 database subnet group*
 
-description: the security group only allow the request come from the app tier, and the database subnet group that groups PostgreSQL in database tier private subnets with multi-az enable. input database subnet id and vpc id from networking module, app security group from compute module, database username from the root [main.tf](http://main.tf) argument. output db\_endpoint. A heavy input low output module.
+*description: the security group only allow the request come from the app tier, and the database subnet group that groups PostgreSQL in database tier private subnets with multi-az enable. input database subnet id and vpc id from networking module, app security group from compute module, database username from the root [main.tf](http://main.tf) argument. output db_endpoint. A heavy input low output module.*
 
 ---
 
 ## Key Design Decisions
 
-- **Bootstrap-isolated state:** 
+- **Bootstrap-isolated state:**  
   *explanation: if the s3 bucket creation set in the project file, when terraform destroy, its also will destroy the s3 bucket that contain tfstate file which should be long-lived inside s3, if the versioning enable, the bucket will state error that old version file must be clear and delete in order to completely destroy the s3 bucket which shouldn’t be. so set the s3 bucket creation in another directory, terraform bootstrap and link the remote state to the bucket in project directory is a wise move, so when the terraform destroy applied will not affect the tfstate file in s3 bucket.*  
-- **Native S3 locking over DynamoDB:** 
-  *explanation: when terraform version after 1.10.x, it support use\_lockfile function directly in terraform back-end argument. in previous version, the creation of dynamodb is needed to create a state lock to look the s3 bucket, this is not cost efficient and complicated than s3 lockfile directly.*   
-- **Three-tier module split (not per-resource):** 
+- **Native S3 locking over DynamoDB:**  
+  *explanation: when terraform version after 1.10.x, it support use_lockfile function directly in terraform back-end argument. in previous version, the creation of dynamodb is needed to create a state lock to look the s3 bucket, this is not cost efficient and complicated than s3 lockfile directly.*   
+- **Three-tier module split (not per-resource):**  
   *explanation: the advantage of using the module block is to encapsulate the complexity under the tier and good for reuse for next time with similar setup, it make the [main.tf](http://main.tf) file short and simple compare to code from scrap and code everything inside the root file. wrapping a single resource would help little or worsen in reuse in next project and make the root file more complicated and harder to understand.*  
-- **SSM Session Manager over a bastion host:** 
+- **SSM Session Manager over a bastion host:**  
   *explanation: SSM sessions Manager can use SSM API direct control and access the instance without creating another instance just for occasional use, its more architecture efficient and cost optimization, less component, less failure possibility.*   
-- **Single NAT Gateway:** *\[Why one NAT and not one-per-AZ? What's the cost vs HA trade-off, and what would production use?\]*  
+- **Single NAT Gateway:**  
   *explanation: as the nat gateway actually cost money and not free tier eligible, i select the single nat gateway over one per az nat gateway is due to illustration purpose and cost consideration. In production to ensure highly available is to use one nate gateway per az, or due to cost optimization, production can use a single nat gateway as deployment decision.*  
-- **Secrets Manager for DB credentials:** 
+- **Secrets Manager for DB credentials:**  
   *explanation: the biggest advantage is it never lands in the Terraform state in plaintext. a hardcoded password sits in the code and state exposes high security issue; even a `sensitive` variable still ends up in state (just hidden from console output). With RDS-managed passwords, the actual secret lives only in Secrets Manager, which is encrypted with KMS and access-controlled by IAM.*   
-- **Network segmentation (three route-table postures):** 
+- **Network segmentation (three route-table postures):**  
   *explanation: the public subnet that accept internet traffic through internet gateway, and the ALB split the traffic and ingest into the private subnet which ASG lives in, this setup is to isolate the app instance from public internet and only accept traffic coming from ALB. and the database is the most isolate tier among these three tier, database subnets group only accept request come from the app tier and decline other traffic expect from app tier. this is to protect the data inside database with least privilege applied.*
 
 ---
 
 ## Prerequisites
 
-- Terraform \>= 1.x  
+- Terraform >= 1.x  
 - AWS CLI configured with credentials  
 - An AWS account  
 
-\- AWS credentials configured  
- \- with permissions to manage VPC, EC2, ELB, RDS,  
+- AWS credentials configured  
+ - with permissions to manage VPC, EC2, ELB, RDS,  
   IAM, SSM, S3, and Secrets Manager. Configure via one of:  
-  \- \`aws configure\` (writes \`\~/.aws/credentials\`), or  
-  \- environment variables:  
-\`\`\`bash  
-    export AWS\_ACCESS\_KEY\_ID="..."  
-    export AWS\_SECRET\_ACCESS\_KEY="..."  
-    export AWS\_DEFAULT\_REGION="ap-southeast-1"  
-\`\`\`  
-  \- or an AWS SSO / named profile (\`export AWS\_PROFILE="your-profile"\`)
+  - `aws configure` (writes `~/.aws/credentials`), or  
+  - environment variables:  
+```bash  
+    export AWS_ACCESS_KEY_ID="..."  
+    export AWS_SECRET_ACCESS_KEY="..."  
+    export AWS_DEFAULT_REGION="ap-southeast-1"  
+```  
+  - or an AWS SSO / named profile (`export AWS_PROFILE="your-profile"`)
 
 > Note: these credentials are for running Terraform locally. The CI pipeline
 > does not use them — it authenticates via OIDC (see [CI/CD Pipeline](#cicd-pipeline)).
@@ -111,7 +105,7 @@ description: the security group only allow the request come from the app tier, a
 
 ## Usage
 
-### 1\. Bootstrap the state backend (run once)
+### 1. Bootstrap the state backend (run once)
 
 cd terraform-bootstrap
 
@@ -120,7 +114,7 @@ terraform init
 terraform apply
 
 
-### 2\. Deploy the application
+### 2. Deploy the application
 
 cd terraform-aws
 
@@ -130,17 +124,17 @@ terraform plan
 
 terraform apply
 
-### 3\. Access
+### 3. Access
 
-\# Get the ALB URL
+# Get the ALB URL
 
-terraform output alb\_dns\_name
+terraform output alb_dns_name
 
-\# Connect to a private instance via SSM (no SSH)
+# Connect to a private instance via SSM (no SSH)
 
-aws ssm start-session \--target \<instance-id\>
+aws ssm start-session --target <instance-id>
 
-### 4\. Teardown
+### 4. Teardown
 
 terraform destroy
 
@@ -195,27 +189,34 @@ and `iam:PassedToService = ec2.amazonaws.com`.
 
 This architecture applies defense-in-depth and least-privilege across the network, access, and data layers:
 
-**\- Network isolation by tier.**  
- 	Public subnets reach the internet via the IGW; private (app) subnets have outbound-only access via NAT; database subnets have no internet route at all. Exposure shrinks with depth — the data tier is unreachable from the internet entirely.  
-**\- Security-group chaining, not open CIDRs.**  
- 	The app tier only accepts traffic from the ALB's security group, and the database only accepts PostgreSQL (5432) from the app tier's security group. Tiers reference each other by SG, never by open IP ranges, so each tier is reachable only from the one directly in front of it.  
-**\- No public database.**   
- RDS is launched with \`publicly\_accessible \= false\` and sits in isolated subnets — it has no public endpoint.  
-**\- No SSH, no bastion, no open port 22\.**   
- Administrative access to private instances is via AWS Systems Manager Session Manager (IAM-authenticated, over the SSM service), eliminating inbound SSH and the need for a jump host.  
-**\- Encryption at rest**.  
- RDS storage is encrypted (\`storage\_encrypted \= true\`), and Terraform state is encrypted in the S3 backend.  
-**\- Managed database credentials.**  
- The RDS master password is generated and stored in AWS Secrets Manager (\`manage\_master\_user\_password\`), so it never appears in Terraform code or state in plaintext.  
-**\- State protection**.  
- Remote state lives in a versioned, access-controlled S3 bucket with native locking, isolated in a separate bootstrap project so it can't be destroyed by the application lifecycle.
-**\- No long-lived cloud credentials in CI.**
-  The deployment pipeline authenticates to AWS through GitHub OIDC federation
-  and assumes an IAM role for short-lived credentials. No access key exists in
-  the repository or its secrets, so there is nothing to rotate, leak, or leave
-  valid after it stops being needed. The role's trust policy is scoped by
-  repository and by workflow context, and the write-capable path is gated on
-  the `production` environment claim.
+## Security Considerations
+
+This architecture applies defense-in-depth and least-privilege across the network, access, and data layers:
+
+- **No long-lived cloud credentials in CI.**
+  The deployment pipeline authenticates to AWS through GitHub OIDC federation and assumes an IAM role for short-lived credentials. No access key exists in the repository or its secrets, so there is nothing to rotate, leak, or leave valid after it stops being needed. The role's trust policy is scoped by repository and by workflow context, and the write-capable path is gated on the `production` environment claim.
+
+- **Network isolation by tier.**
+  Public subnets reach the internet via the IGW; private (app) subnets have outbound-only access via NAT; database subnets have no internet route at all. Exposure shrinks with depth — the data tier is unreachable from the internet entirely.
+
+- **Security-group chaining, not open CIDRs.**
+  The app tier only accepts traffic from the ALB's security group, and the database only accepts PostgreSQL (5432) from the app tier's security group. Tiers reference each other by SG, never by open IP ranges, so each tier is reachable only from the one directly in front of it.
+
+- **No public database.**
+  RDS is launched with `publicly_accessible = false` and sits in isolated subnets — it has no public endpoint.
+
+- **No SSH, no bastion, no open port 22.**
+  Administrative access to private instances is via AWS Systems Manager Session Manager (IAM-authenticated, over the SSM service), eliminating inbound SSH and the need for a jump host.
+
+- **Encryption at rest.**
+  RDS storage is encrypted (`storage_encrypted = true`), and Terraform state is encrypted in the S3 backend.
+
+- **Managed database credentials.**
+  The RDS master password is generated and stored in AWS Secrets Manager (`manage_master_user_password`), so it never appears in Terraform code or state in plaintext.
+
+- **State protection.**
+  Remote state lives in a versioned, access-controlled S3 bucket with native locking, isolated in a separate bootstrap project so it can't be destroyed by the application lifecycle.
+
 
 ---
 
@@ -223,12 +224,12 @@ This architecture applies defense-in-depth and least-privilege across the networ
 
 *This is a portfolio project intended to be deployed for demonstration and then torn down. The main cost-incurring resources are:*
 
-*\- NAT Gateway — hourly charge plus data processing.*  
-*\- RDS (Multi-AZ) — runs a standby replica, so it costs roughly double a single-AZ instance; not fully covered by the free tier.*  
-*\- Application Load Balancer — hourly charge plus capacity units.*  
-*\- EC2 instances — the ASG runs 2 × t3.micro by default.*
+*- NAT Gateway — hourly charge plus data processing.*  
+*- RDS (Multi-AZ) — runs a standby replica, so it costs roughly double a single-AZ instance; not fully covered by the free tier.*  
+*- Application Load Balancer — hourly charge plus capacity units.*  
+*- EC2 instances — the ASG runs 2 × t3.micro by default.*
 
-*Because state is isolated in the separate bootstrap project, \`terraform destroy\` on the application project tears down all billable resources cleanly without affecting the state backend. The recommended workflow is to apply for a demo, then destroy — redeploying takes a single \`terraform apply\`.*
+*Because state is isolated in the separate bootstrap project, `terraform destroy` on the application project tears down all billable resources cleanly without affecting the state backend. The recommended workflow is to apply for a demo, then destroy — redeploying takes a single `terraform apply`.*
 
 ---
 
@@ -237,8 +238,8 @@ This architecture applies defense-in-depth and least-privilege across the networ
 ***Challenge: Terraform destroyed its own state backend***
 
 *Early on, the S3 bucket and DynamoDB lock table that held the project's*  
-*remote state were defined \*inside the same project\* that used them as a*  
-*backend. Running \`terraform destroy\` deleted the state bucket while the*  
+*remote state were defined *inside the same project* that used them as a*  
+*backend. Running `terraform destroy` deleted the state bucket while the*  
 *operation was still in progress — corrupting state and orphaning resources.*
 
 ***Root cause:** a project must never manage, as a resource, the same bucket*  
@@ -247,9 +248,9 @@ This architecture applies defense-in-depth and least-privilege across the networ
 
 (The lock table is gone now — see *Native S3 locking over DynamoDB* above.)
 
-***Fix:** I split the backend infrastructure into a separate \`terraform-bootstrap\`*  
-*project with \*local\* state, applied once and never destroyed. The application*  
-*project now only \*references\* that bucket via its \`backend\` block. This broke*  
+***Fix:** I split the backend infrastructure into a separate `terraform-bootstrap`*  
+*project with *local* state, applied once and never destroyed. The application*  
+*project now only *references* that bucket via its `backend` block. This broke*  
 *the circular dependency permanently.*
 
 ***Challenge: Deciding module boundaries***
@@ -262,7 +263,7 @@ This architecture applies defense-in-depth and least-privilege across the networ
 *module hides genuine complexity and exposes a clean output→input contract,*  
 *rather than over-modularizing into a module per resource.*
 
-***Challenge: a GitHub environment silently changes your OIDC identity
+***Challenge: a GitHub environment silently changes your OIDC identity***
 
 After moving CI authentication to OIDC, the `plan` job authenticated fine and
 the `apply` job — same repository, same role, same commit — was rejected with
@@ -304,3 +305,12 @@ differs.
 - Publish modules to a remote registry
 
 ---
+
+Verified in CloudTrail — same run, same role, same OIDC provider and audience.
+Only the subject claim differs:
+
+![Plan job — subject is the branch ref](docs/oidc-cloudtrail-plan.png)
+
+![Apply job — subject is the production environment](docs/oidc-cloudtrail-apply.png)
+
+![Event sequence: plan, plan, then apply after approval](docs/oidc-cloudtrail-events.png)
