@@ -49,20 +49,18 @@ terraform-aws/
 
 ### `networking`
 
-*\[Owns: ... | Inputs: environment, vpc\_cidr | Outputs: vpc\_id \+ 3 subnet-id lists\]*  
 *contain 1 VPC, 6 subnets resources block, 3 route table(6 route table association) and 1 nat gateway and 1 internet gateway.*
 
 *Description: the 6 subnets are broken into 3 parts, 2 public subnets, 2 private subnets for app and 2 private subnets for database, app private subnets consume traffic from public subnets that ALB lives in, A database only processes requests from app private subnets. The networking module outputs 3 subnets id lists and 1 vpc id. Consume environment and vpc CIDR range from root main.tf . root argument data A heavy output and low input module.*
 
 `compute`  
-*\[Owns: ... | Inputs: ... | Outputs: app\_sg\_id, alb\_dns\_name\]*  
+
 *contain 1 ami lookup, 2 security groups, 1 ssm manager iam role, 1 launch template, 1 auto scaling group, 1 ALB and ALB listener.*
 
 *description: the 1 security groups config in public subnet that allow all traffic from internet and feed into ALB, the another security group config in private subnet group that only allow traffic from ALB. SSM manager use SSM API that allow developer get into the instance for diagnosis purpose without another bastion host, SSH or any added open port, and the launch template fetch the ami lookup data for creation of launch template. input the vpc id and both private and public subnet id from networking module, the compute module output the app security group id for database module reference and alb dns name for networking module reference. An input and output heavy module.*
 
 ### `database`
 
-*\[Owns: ... | Inputs: ... | Outputs: db\_endpoint\]*  
 contain 1 PostgreSQL database lives in private subnet group with Multi-AZ enable, 1 security group, 1 database subnet group
 
 description: the security group only allow the request come from the app tier, and the database subnet group that groups PostgreSQL in database tier private subnets with multi-az enable. input database subnet id and vpc id from networking module, app security group from compute module, database username from the root [main.tf](http://main.tf) argument. output db\_endpoint. A heavy input low output module.
@@ -71,19 +69,19 @@ description: the security group only allow the request come from the app tier, a
 
 ## Key Design Decisions
 
-- **Bootstrap-isolated state:** *\[Why is the state bucket in a separate `terraform-bootstrap` project with local state? What problem does it prevent?\]*  
+- **Bootstrap-isolated state:** 
   *explanation: if the s3 bucket creation set in the project file, when terraform destroy, its also will destroy the s3 bucket that contain tfstate file which should be long-lived inside s3, if the versioning enable, the bucket will state error that old version file must be clear and delete in order to completely destroy the s3 bucket which shouldn’t be. so set the s3 bucket creation in another directory, terraform bootstrap and link the remote state to the bucket in project directory is a wise move, so when the terraform destroy applied will not affect the tfstate file in s3 bucket.*  
-- **Native S3 locking over DynamoDB:** *\[Why `use_lockfile` instead of a lock table?\]*  
+- **Native S3 locking over DynamoDB:** 
   *explanation: when terraform version after 1.10.x, it support use\_lockfile function directly in terraform back-end argument. in previous version, the creation of dynamodb is needed to create a state lock to look the s3 bucket, this is not cost efficient and complicated than s3 lockfile directly.*   
-- **Three-tier module split (not per-resource):** *\[Why split by tier? Why NOT a module per resource?\]*  
+- **Three-tier module split (not per-resource):** 
   *explanation: the advantage of using the module block is to encapsulate the complexity under the tier and good for reuse for next time with similar setup, it make the [main.tf](http://main.tf) file short and simple compare to code from scrap and code everything inside the root file. wrapping a single resource would help little or worsen in reuse in next project and make the root file more complicated and harder to understand.*  
-  **SSM Session Manager over a bastion host:** *\[Why no bastion? What does SSM avoid — public IP, open port 22, jump-box management?\]*  
+- **SSM Session Manager over a bastion host:** 
   *explanation: SSM sessions Manager can use SSM API direct control and access the instance without creating another instance just for occasional use, its more architecture efficient and cost optimization, less component, less failure possibility.*   
 - **Single NAT Gateway:** *\[Why one NAT and not one-per-AZ? What's the cost vs HA trade-off, and what would production use?\]*  
   *explanation: as the nat gateway actually cost money and not free tier eligible, i select the single nat gateway over one per az nat gateway is due to illustration purpose and cost consideration. In production to ensure highly available is to use one nate gateway per az, or due to cost optimization, production can use a single nat gateway as deployment decision.*  
-- **Secrets Manager for DB credentials:** *\[Why `manage_master_user_password` instead of a variable? What does it keep out of state?\]*  
+- **Secrets Manager for DB credentials:** 
   *explanation: the biggest advantage is it never lands in the Terraform state in plaintext. a hardcoded password sits in the code and state exposes high security issue; even a `sensitive` variable still ends up in state (just hidden from console output). With RDS-managed passwords, the actual secret lives only in Secrets Manager, which is encrypted with KMS and access-controlled by IAM.*   
-- **Network segmentation (three route-table postures):** *\[public→IGW, private→NAT, database→isolated. Why this progressive lockdown?\]*  
+- **Network segmentation (three route-table postures):** 
   *explanation: the public subnet that accept internet traffic through internet gateway, and the ALB split the traffic and ingest into the private subnet which ASG lives in, this setup is to isolate the app instance from public internet and only accept traffic coming from ALB. and the database is the most isolate tier among these three tier, database subnets group only accept request come from the app tier and decline other traffic expect from app tier. this is to protect the data inside database with least privilege applied.*
 
 ---
@@ -93,7 +91,6 @@ description: the security group only allow the request come from the app tier, a
 - Terraform \>= 1.x  
 - AWS CLI configured with credentials  
 - An AWS account  
-- *\[anything else: Session Manager plugin for SSM access, etc.\]*
 
 \- AWS credentials configured  
  \- with permissions to manage VPC, EC2, ELB, RDS,  
@@ -107,6 +104,9 @@ description: the security group only allow the request come from the app tier, a
 \`\`\`  
   \- or an AWS SSO / named profile (\`export AWS\_PROFILE="your-profile"\`)
 
+> Note: these credentials are for running Terraform locally. The CI pipeline
+> does not use them — it authenticates via OIDC (see [CI/CD Pipeline](#cicd-pipeline)).
+
 ---
 
 ## Usage
@@ -119,7 +119,6 @@ terraform init
 
 terraform apply
 
-*\[One line on what this creates and why it runs first\]*
 
 ### 2\. Deploy the application
 
@@ -145,7 +144,50 @@ aws ssm start-session \--target \<instance-id\>
 
 terraform destroy
 
-*\[Note: mention this is safe because state lives in the separate bootstrap bucket\]*
+---
+
+## CI/CD Pipeline
+
+Infrastructure changes flow through GitHub Actions rather than a local
+`terraform apply`. The pipeline is split by reversibility: read-only
+operations run automatically, and anything irreversible requires a human.
+
+**On every push and pull request** — `fmt` → `init` → `validate` → `plan`,
+ordered cheap-to-expensive so it fails fast. Pull requests get a read-only
+preview; nothing reaches infrastructure.
+
+**On push to `main`** — `apply` runs only after manual approval through a
+GitHub `production` environment gate. The plan summary is written to the
+run summary so the approver can read the diff on the same page as the
+approve button.
+
+### Authentication: OIDC, not stored keys
+
+There are no AWS credentials in this repository — not in the code, and not
+in GitHub Secrets. GitHub Actions federates into AWS using OpenID Connect:
+GitHub mints a short-lived token for the specific workflow run, AWS validates
+it against a trust policy, and exchanges it for temporary credentials that
+expire with the job.
+
+The trust policy is scoped on the token's subject claim:
+
+| Job | Subject claim | Role permissions |
+|---|---|---|
+| plan | `repo:OWNER/REPO:pull_request`<br>`repo:OWNER/REPO:ref:refs/heads/main` | read |
+| apply | `repo:OWNER/REPO:environment:production` | write |
+
+The apply path keys on the **environment** claim rather than the branch.
+GitHub only issues that claim to a job that has passed the environment's
+protection rules — so AWS itself will not hand out write credentials to a
+job that skipped the approval gate. Bypassing the gate isn't a policy
+violation; it isn't possible.
+
+The IAM permissions attached to that role were converged on rather than
+guessed: starting from a service-scoped policy, running the pipeline, and
+adding exactly what each `AccessDenied` named. The one exception is IAM
+itself — `CreateRole` + `AttachRolePolicy` + `PassRole` together form a
+privilege-escalation path, so those are constrained by resource name prefix
+and `iam:PassedToService = ec2.amazonaws.com`.
 
 ---
 
@@ -167,6 +209,13 @@ This architecture applies defense-in-depth and least-privilege across the networ
  The RDS master password is generated and stored in AWS Secrets Manager (\`manage\_master\_user\_password\`), so it never appears in Terraform code or state in plaintext.  
 **\- State protection**.  
  Remote state lives in a versioned, access-controlled S3 bucket with native locking, isolated in a separate bootstrap project so it can't be destroyed by the application lifecycle.
+**\- No long-lived cloud credentials in CI.**
+  The deployment pipeline authenticates to AWS through GitHub OIDC federation
+  and assumes an IAM role for short-lived credentials. No access key exists in
+  the repository or its secrets, so there is nothing to rotate, leak, or leave
+  valid after it stops being needed. The role's trust policy is scoped by
+  repository and by workflow context, and the write-capable path is gated on
+  the `production` environment claim.
 
 ---
 
@@ -196,6 +245,8 @@ This architecture applies defense-in-depth and least-privilege across the networ
 *it stores its own state in — destroy will delete the backend out from under*  
 *itself.*
 
+(The lock table is gone now — see *Native S3 locking over DynamoDB* above.)
+
 ***Fix:** I split the backend infrastructure into a separate \`terraform-bootstrap\`*  
 *project with \*local\* state, applied once and never destroyed. The application*  
 *project now only \*references\* that bucket via its \`backend\` block. This broke*  
@@ -211,12 +262,45 @@ This architecture applies defense-in-depth and least-privilege across the networ
 *module hides genuine complexity and exposes a clean output→input contract,*  
 *rather than over-modularizing into a module per resource.*
 
+***Challenge: a GitHub environment silently changes your OIDC identity
+
+After moving CI authentication to OIDC, the `plan` job authenticated fine and
+the `apply` job — same repository, same role, same commit — was rejected with
+`Not authorized to perform sts:AssumeRoleWithWebIdentity`. The error names no
+claim, so there is nothing in it to search for.
+
+**Root cause:** the OIDC token's subject claim encodes the *context* a job runs
+in, not just the repository. A push to a branch produces
+`repo:owner/name:ref:refs/heads/main`. But the moment a job references an
+environment, the subject becomes `repo:owner/name:environment:production` and
+the branch disappears from it. My trust policy only listed the branch form.
+
+Nobody suspects the line reading `environment: production`, because it looks
+like a deployment concern rather than an authentication one.
+
+**Fix, and then the design:** I added the environment subject to the trust
+policy. Then I realised GitHub does this deliberately — "a job that cleared the
+production environment's protection rules" is a stronger assertion than "a job
+on main", because anyone with write access can push to main. So the apply role
+now keys on the environment claim specifically, which turns the approval gate
+from a convention into an enforced boundary.
+
+Verified in CloudTrail: the `plan` and `apply` events from the same run show the
+same role, same OIDC provider and same audience — only `subjectFromWebIdentityToken`
+differs.
+
 --- 
 
 ## Future Improvements
 
-- HTTPS via ACM certificate \+ HTTP→HTTPS redirect  
-- CI/CD pipeline (GitHub Actions) for plan/apply  
-- *\[NAT-per-AZ for HA, VPC endpoints for SSM, remote module registry, etc.\]*
+- HTTPS via ACM certificate + HTTP→HTTPS redirect
+- Split the CI role in two — a read-only role for `plan` and a
+  write role for `apply` — so a pull-request plan cannot hold
+  credentials capable of destroying infrastructure
+- Pass the approved plan as a build artifact (`plan -out` → `apply tfplan`)
+  so the executed plan is provably the one that was approved
+- NAT Gateway per AZ for high availability
+- VPC endpoints for SSM to keep session traffic off the NAT
+- Publish modules to a remote registry
 
 ---
