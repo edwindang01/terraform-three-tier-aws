@@ -15,11 +15,6 @@ variable "database_subnet_ids" {
   type        = list(string)
 }
 
-variable "app_sg_id" {
-  description = "App tier SG ID (from compute) — DB ingress allows Postgres from it"
-  type        = string
-}
-
 variable "db_username" {
   description = "RDS master username"
   type        = string

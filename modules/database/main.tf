@@ -1,6 +1,6 @@
 # ── Database module ──
 # DB security group, DB subnet group, Multi-AZ Postgres RDS instance.
-# vpc_id, database_subnet_ids (from networking) and app_sg_id (from compute)
+# vpc_id, database_subnet_ids (from networking) 
 # arrive as inputs via the root.
 
 resource "aws_security_group" "database" {

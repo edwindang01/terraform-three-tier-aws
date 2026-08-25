@@ -76,15 +76,6 @@ resource "aws_vpc_security_group_ingress_rule" "app_from_alb" {
   ip_protocol                  = "tcp"
 }
 
-resource "aws_vpc_security_group_egress_rule" "app_to_db" {
-  security_group_id            = aws_security_group.app.id
-  description                  = "postgres to database tier"
-  referenced_security_group_id = var.db_security_group_id
-  from_port                    = 5432
-  to_port                      = 5432
-  ip_protocol                  = "tcp"
-}
-
 resource "aws_vpc_security_group_egress_rule" "app_https_out" {
   security_group_id = aws_security_group.app.id
   description       = "https for ssm, package repos, aws apis"

@@ -35,8 +35,3 @@ variable "certificate_arn" {
   type        = string
   default     = null
 }
-
-variable "db_security_group_id" {
-  description = "Database tier security group, for the app egress rule."
-  type        = string
-}
