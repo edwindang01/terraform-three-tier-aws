@@ -27,5 +27,22 @@ module "database" {
   db_username         = var.db_username
   vpc_id              = module.network.vpc_id              # from networking
   database_subnet_ids = module.network.database_subnet_ids # from networking
-  app_sg_id           = module.compute.app_sg_id           # from COMPUTE
+}
+
+resource "aws_vpc_security_group_egress_rule" "app_to_db" {
+  security_group_id            = module.compute.app_security_group_id
+  description                  = "postgres to database tier"
+  referenced_security_group_id = module.database.security_group_id
+  from_port                    = 5432
+  to_port                      = 5432
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "db_from_app" {
+  security_group_id            = module.database.security_group_id
+  description                  = "postgres from app tier"
+  referenced_security_group_id = module.compute.app_security_group_id
+  from_port                    = 5432
+  to_port                      = 5432
+  ip_protocol                  = "tcp"
 }

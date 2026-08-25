@@ -29,3 +29,9 @@ variable "app_instance_type" {
   description = "EC2 instance type for the app tier"
   type        = string
 }
+
+variable "certificate_arn" {
+  description = "ACM certificate ARN for the HTTPS listener. Null runs HTTP-only."
+  type        = string
+  default     = null
+}
