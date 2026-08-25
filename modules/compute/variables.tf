@@ -29,3 +29,14 @@ variable "app_instance_type" {
   description = "EC2 instance type for the app tier"
   type        = string
 }
+
+variable "certificate_arn" {
+  description = "ACM certificate ARN for the HTTPS listener. Null runs HTTP-only."
+  type        = string
+  default     = null
+}
+
+variable "db_security_group_id" {
+  description = "Database tier security group, for the app egress rule."
+  type        = string
+}

@@ -3,6 +3,11 @@
 # Subnet IDs and vpc_id arrive as inputs (var.*) from the root, sourced from
 # the networking module.
 
+#locals block for https certificate
+locals {
+  https_enabled = var.certificate_arn != null
+}
+
 # ── AMI lookup (only compute needs this) ──
 data "aws_ssm_parameter" "al2023" {
   name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
@@ -14,32 +19,40 @@ resource "aws_security_group" "alb" {
   description = "security group for application load balancer"
   vpc_id      = var.vpc_id
 
-  ingress {
-    description = "http from internet"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  ingress {
-    description = "https from internet"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  egress {
-    description = "all outbound traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
   tags = {
     Name        = "${var.environment}-alb-sg"
     Environment = var.environment
   }
+}
+
+# Seperate ingress egress rules from ALB SG block 
+resource "aws_vpc_security_group_ingress_rule" "alb_http" {
+  security_group_id = aws_security_group.alb.id
+  description       = "http from internet"
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = 80
+  to_port           = 80
+  ip_protocol       = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "alb_https" {
+  count = local.https_enabled ? 1 : 0
+
+  security_group_id = aws_security_group.alb.id
+  description       = "https from internet"
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = 443
+  to_port           = 443
+  ip_protocol       = "tcp"
+}
+
+resource "aws_vpc_security_group_egress_rule" "alb_to_app" {
+  security_group_id            = aws_security_group.alb.id
+  description                  = "to app tier on 80"
+  referenced_security_group_id = aws_security_group.app.id
+  from_port                    = 80
+  to_port                      = 80
+  ip_protocol                  = "tcp"
 }
 
 resource "aws_security_group" "app" {
@@ -47,32 +60,38 @@ resource "aws_security_group" "app" {
   description = "security group for App EC2 instances"
   vpc_id      = var.vpc_id
 
-  ingress {
-    description     = "http from alb only"
-    from_port       = 80
-    to_port         = 80
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-  }
-  ingress {
-    description     = "https from alb only"
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-  }
-  egress {
-    description = "All outbound traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
   tags = {
     Name        = "${var.environment}-app-sg"
     Environment = var.environment
   }
+}
+
+# Seperate ingress egress rules from APP SG block  
+resource "aws_vpc_security_group_ingress_rule" "app_from_alb" {
+  security_group_id            = aws_security_group.app.id
+  description                  = "http from alb only"
+  referenced_security_group_id = aws_security_group.alb.id
+  from_port                    = 80
+  to_port                      = 80
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_egress_rule" "app_to_db" {
+  security_group_id            = aws_security_group.app.id
+  description                  = "postgres to database tier"
+  referenced_security_group_id = var.db_security_group_id
+  from_port                    = 5432
+  to_port                      = 5432
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_egress_rule" "app_https_out" {
+  security_group_id = aws_security_group.app.id
+  description       = "https for ssm, package repos, aws apis"
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = 443
+  to_port           = 443
+  ip_protocol       = "tcp"
 }
 
 # ── SSM Session Manager access ──
@@ -193,10 +212,43 @@ resource "aws_lb_target_group" "app" {
   }
 }
 
+#lb listener http redirect to https conditional
+
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.app.arn
   port              = 80
   protocol          = "HTTP"
+
+  dynamic "default_action" {
+    for_each = local.https_enabled ? [1] : []
+    content {
+      type = "redirect"
+
+      redirect {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
+    }
+  }
+
+  dynamic "default_action" {
+    for_each = local.https_enabled ? [] : [1]
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.app.arn
+    }
+  }
+}
+
+resource "aws_lb_listener" "https" {
+  count = local.https_enabled ? 1 : 0
+
+  load_balancer_arn = aws_lb.app.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = var.certificate_arn
 
   default_action {
     type             = "forward"

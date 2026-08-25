@@ -38,13 +38,13 @@ jobs:
 
       - name: Terraform Plan
         run: |
-          terraform plan -input=false -no-color -out=tfplan | tee plan.txt
-          {
-            echo '### Terraform Plan'
-            echo '```'
-            tail -n 30 plan.txt
-            echo '```'
-          } >> $GITHUB_STEP_SUMMARY
+            terraform plan -input=false -no-color -out=tfplan | tee plan.txt
+            {
+              echo '### Terraform Plan'
+              echo '```'
+              tail -n 30 plan.txt
+              echo '```'
+            } >> $GITHUB_STEP_SUMMARY
   apply:
     name: Terraform Apply
     needs: plan
