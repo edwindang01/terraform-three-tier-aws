@@ -12,12 +12,12 @@ module "network" {
 module "compute" {
   source = "./modules/compute"
 
-  environment          = var.environment
-  project              = var.project
-  app_instance_type    = var.app_instance_type
-  vpc_id               = module.network.vpc_id             # from networking
-  public_subnet_ids    = module.network.public_subnet_ids  # from networking
-  private_subnet_ids   = module.network.private_subnet_ids # from networking
+  environment        = var.environment
+  project            = var.project
+  app_instance_type  = var.app_instance_type
+  vpc_id             = module.network.vpc_id             # from networking
+  public_subnet_ids  = module.network.public_subnet_ids  # from networking
+  private_subnet_ids = module.network.private_subnet_ids # from networking
 }
 
 module "database" {
